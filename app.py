@@ -42,12 +42,14 @@ s3 = boto3.client(
 
 # ------------------ Models ------------------
 class User(db.Model):
-    __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
     phone = db.Column(db.String(15), nullable=False)
     aadhaar = db.Column(db.String(12), unique=True, nullable=True)
+    email = db.Column(db.String(120), nullable=True)
+    address = db.Column(db.Text, nullable=True)  # <-- new field
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, onupdate=datetime.utcnow)
 
 
 class Document(db.Model):
