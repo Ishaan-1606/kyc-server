@@ -5,9 +5,11 @@ import boto3
 from botocore.client import Config
 import os
 from datetime import datetime
-from dotenv import load_dotenv 
+from dotenv import load_dotenv
 
+# Load .env for local, Railway uses its own env vars
 load_dotenv()
+
 app = Flask(__name__)
 
 # ------------------ Database Config ------------------
@@ -40,28 +42,34 @@ s3 = boto3.client(
 
 # ------------------ Models ------------------
 class User(db.Model):
+    __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
     phone = db.Column(db.String(15), nullable=False)
     aadhaar = db.Column(db.String(12), unique=True, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+
 class Document(db.Model):
+    __tablename__ = "documents"
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    doc_type = db.Column(db.String(20), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    doc_type = db.Column(db.String(20), nullable=False)  # aadhaar, pan, dl, voterid
     doc_url = db.Column(db.String(255), nullable=False)
-    status = db.Column(db.String(20), default="pending")
+    status = db.Column(db.String(20), default="pending")  # pending, verified, rejected
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+
 class Face(db.Model):
+    __tablename__ = "faces"
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     face_url = db.Column(db.String(255), nullable=False)
     liveness_score = db.Column(db.Float, nullable=True)
     match_score = db.Column(db.Float, nullable=True)
     status = db.Column(db.String(20), default="pending")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 
 # ------------------ Helper ------------------
 def upload_to_supabase(file, path):
@@ -73,13 +81,15 @@ def upload_to_supabase(file, path):
         Key=key,
         ExtraArgs={"ContentType": file.mimetype}
     )
-    # Strip `/s3` from endpoint to build public URL
+    # Build public URL
     return f"{S3_ENDPOINT.replace('/s3','')}/object/public/{S3_BUCKET}/{key}"
+
 
 # ------------------ Routes ------------------
 @app.route('/')
 def home():
     return jsonify({"message": "KYC API with Users, Documents & Faces ✅"})
+
 
 # ---- USERS ----
 @app.route('/users', methods=['POST'])
@@ -89,6 +99,7 @@ def create_user():
     db.session.add(user)
     db.session.commit()
     return jsonify({"status": "success", "user_id": user.id}), 201
+
 
 @app.route('/users/<int:id>', methods=['GET'])
 def get_user(id):
@@ -103,6 +114,7 @@ def get_user(id):
         "created_at": user.created_at
     })
 
+
 @app.route('/users/<int:id>', methods=['PUT'])
 def update_user(id):
     user = User.query.get(id)
@@ -115,6 +127,7 @@ def update_user(id):
     db.session.commit()
     return jsonify({"status": "updated"}), 200
 
+
 @app.route('/users/<int:id>', methods=['DELETE'])
 def delete_user(id):
     user = User.query.get(id)
@@ -123,6 +136,7 @@ def delete_user(id):
     db.session.delete(user)
     db.session.commit()
     return jsonify({"status": "deleted"}), 200
+
 
 # ---- DOCUMENTS ----
 @app.route('/users/<int:id>/documents', methods=['POST'])
@@ -140,6 +154,7 @@ def upload_document(id):
     db.session.commit()
     return jsonify({"status": "uploaded", "doc_id": doc.id, "doc_url": url}), 201
 
+
 @app.route('/users/<int:id>/documents', methods=['GET'])
 def list_documents(id):
     docs = Document.query.filter_by(user_id=id).all()
@@ -151,6 +166,7 @@ def list_documents(id):
         "uploaded_at": d.uploaded_at
     } for d in docs]), 200
 
+
 @app.route('/documents/<int:doc_id>', methods=['DELETE'])
 def delete_document(doc_id):
     doc = Document.query.get(doc_id)
@@ -159,6 +175,7 @@ def delete_document(doc_id):
     db.session.delete(doc)
     db.session.commit()
     return jsonify({"status": "deleted"}), 200
+
 
 # ---- FACES ----
 @app.route('/users/<int:id>/face', methods=['POST'])
@@ -175,6 +192,7 @@ def upload_face(id):
     db.session.commit()
     return jsonify({"status": "uploaded", "face_id": face.id, "face_url": url}), 201
 
+
 @app.route('/users/<int:id>/face', methods=['GET'])
 def get_faces(id):
     faces = Face.query.filter_by(user_id=id).all()
@@ -187,6 +205,7 @@ def get_faces(id):
         "created_at": f.created_at
     } for f in faces]), 200
 
+
 @app.route('/faces/<int:face_id>', methods=['DELETE'])
 def delete_face(face_id):
     face = Face.query.get(face_id)
@@ -196,9 +215,13 @@ def delete_face(face_id):
     db.session.commit()
     return jsonify({"status": "deleted"}), 200
 
+
+# ------------------ Ensure Tables Exist ------------------
+with app.app_context():
+    db.create_all()
+
+
 # ------------------ Main ------------------
 if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
     print("Tables created ✅")
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
